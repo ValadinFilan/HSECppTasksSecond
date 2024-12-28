@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <linux/input.h>
 #include <opencv4/opencv2/core.hpp>
 #include <opencv4/opencv2/core/mat.hpp>
@@ -45,27 +46,43 @@ void send_post(const std::string& host, const std::string& port, const std::stri
     stream.socket().shutdown(tcp::socket::shutdown_both, error);
 }
 
-void download_cats() {
+void download_cats() 
+{
+    asio::io_context ioc;
+    std::vector<std::shared_ptr<beast::tcp_stream>> streams;
+    std::vector<beast::flat_buffer> buffers(12);
+    std::vector<http::response<http::dynamic_body>> responses(12);
+    
     for(int i = 0; i < 12; i++) {
-        auto stream = create_connection("algisothal.ru", "8888");
-
-        http::request<http::string_body> request{http::verb::get, "/cat", 11};
-        http::write(stream, request);
-
-        beast::flat_buffer buffer;
-        http::response<http::dynamic_body> response;
-        http::read(stream, buffer, response);
-
-        std::string filename = "./images/cat_" + std::to_string(i) + ".jpg";
-        std::ofstream out(filename, std::ios::binary);
-        out << beast::buffers_to_string(response.body().data());
-        out.close();
-
-        beast::error_code error;
-        stream.socket().shutdown(tcp::socket::shutdown_both, error);
-
-        std::cout << "Downloaded image " << (i + 1) << std::endl;
+        tcp::resolver resolver(ioc);
+        auto stream = std::make_shared<beast::tcp_stream>(ioc);
+        streams.push_back(stream);
+        
+        auto const results = resolver.resolve("algisothal.ru", "8888");
+        stream->async_connect(results,
+            [stream, i, &buffers, &responses](beast::error_code ec, tcp::endpoint) {
+                http::request<http::string_body> req{http::verb::get, "/cat", 11};
+                http::async_write(*stream, req,
+                    [stream, i, &buffers, &responses](beast::error_code ec, std::size_t) {
+                        if(ec) return;
+                        
+                        http::async_read(*stream, buffers[i], responses[i],
+                            [stream, i, &responses](beast::error_code ec, std::size_t) {
+                                if(ec) return;
+                                
+                                std::string filename = "./images/cat_" + std::to_string(i) + ".jpg";
+                                std::ofstream out(filename, std::ios::binary);
+                                out << beast::buffers_to_string(responses[i].body().data());
+                                out.close();
+                                
+                                beast::error_code error;
+                                stream->socket().shutdown(tcp::socket::shutdown_both, error);
+                            });
+                    });
+            });
     }
+    
+    ioc.run();
 }
 
 void create_collage() {
