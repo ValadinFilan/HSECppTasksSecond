@@ -83,7 +83,7 @@ int main() {
             }
 
             auto [stdout_output, stderr_output] = execute_command(command, args);    
-            *response_body = stdout_output + " " + stderr_output;
+            *response_body = "{ \"stdout\": \"" + stdout_output + "\", \"stderr\": \"" + stderr_output + "\" }";
             *response_status = http::status::ok;
             
     });
