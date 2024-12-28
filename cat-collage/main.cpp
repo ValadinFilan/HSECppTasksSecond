@@ -46,30 +46,16 @@ void send_post(const std::string& host, const std::string& port, const std::stri
     stream.socket().shutdown(tcp::socket::shutdown_both, error);
 }
 
+
 void download_cats() 
 {
     asio::io_context ioc;
-    std::vector<std::shared_ptr<beast::tcp_stream>> streams;
     std::vector<beast::flat_buffer> buffers(12);
     std::vector<http::response<http::dynamic_body>> responses(12);
     
     for(int i = 0; i < 12; i++) {
-        tcp::resolver resolver(ioc);
         auto stream = std::make_shared<beast::tcp_stream>(ioc);
-        streams.push_back(stream);
-        
-        auto const results = resolver.resolve("algisothal.ru", "8888");
-        stream->async_connect(results,
-            [stream, i, &buffers, &responses](beast::error_code ec, tcp::endpoint) {
-                http::request<http::string_body> req{http::verb::get, "/cat", 11};
-                http::async_write(*stream, req,
-                    [stream, i, &buffers, &responses](beast::error_code ec, std::size_t) {
-                        if(ec) return;
-                        
-                        http::async_read(*stream, buffers[i], responses[i],
-                            [stream, i, &responses](beast::error_code ec, std::size_t) {
-                                if(ec) return;
-                                
+        auto on_read = [stream, i, &responses](beast::error_code ec, std::size_t) {
                                 std::string filename = "./images/cat_" + std::to_string(i) + ".jpg";
                                 std::ofstream out(filename, std::ios::binary);
                                 out << beast::buffers_to_string(responses[i].body().data());
@@ -77,11 +63,22 @@ void download_cats()
                                 
                                 beast::error_code error;
                                 stream->socket().shutdown(tcp::socket::shutdown_both, error);
-                            });
-                    });
-            });
+                            };
+
+        auto on_write = [stream, i, &buffers, &responses, on_read](beast::error_code ec, std::size_t) {
+                            http::async_read(*stream, buffers[i], responses[i], on_read);
+                        };
+
+        auto on_connect = [stream, on_write](beast::error_code ec, tcp::endpoint) {
+                            http::request<http::string_body> req{http::verb::get, "/cat", 11};
+                            http::async_write(*stream, req, on_write);
+                        };
+        
+        tcp::resolver resolver(ioc);
+        auto const results = resolver.resolve("algisothal.ru", "8888");
+        stream->async_connect(results, on_connect);
     }
-    
+
     ioc.run();
 }
 
