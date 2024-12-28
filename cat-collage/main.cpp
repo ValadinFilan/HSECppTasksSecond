@@ -88,7 +88,7 @@ void create_collage() {
 }
 
 void upload_collage() {
-    auto stream = create_connection("algisothal.ru", "8890");
+    auto stream = create_connection("algisothal.ru", "8889");
 
     std::ifstream file("./images/collage.jpg", std::ios::binary);
     
